@@ -122,7 +122,10 @@ own pace without interfering with each other.
 .. seealso::
 
    yMMSL documentation on :external+ymmsl:ref:`Timelines` for how to declare
-   a ``timeline <name>:`` heading in a yMMSL file.
+   a ``timeline <name>:`` heading in a yMMSL file, and on
+   :external+ymmsl:ref:`Matching timelines` for how to declare two
+   timelines equivalent with ``matching_timelines``, used below for
+   :ref:`Interact coupling and timeline bridges`.
 
 
 Send/receive order
@@ -206,9 +209,11 @@ Two components can also interact as peers: Component 1's ``O_I`` port
 connects to Component 2's ``S`` port, and Component 2's ``O_I`` connects
 back to Component 1's ``S``. By default each component's ``O_I``/``S`` pair
 opens its *own* new subtimeline, nested inside that component's own. Component
-1 and Component 2 would end up on two different subtimelines and MUSCLE3 would
-reject the conduits between them. To actually share one, both need the same
-explicit ``timeline <name>:`` heading grouping these ports.
+1 and Component 2 would therefore end up on two different subtimelines, and
+since a conduit only ever connects ports on the same timeline, yMMSL would
+reject the conduits between them. Declaring the two timelines a
+:external+ymmsl:ref:`matching_timelines <Matching timelines>` pair is what
+makes this work, see the yMMSL documentation linked there for details.
 
 Both components have to send on their ``O_I`` port before either receives on
 ``S``. If both components take steps at exactly the same pace, this works in
@@ -218,24 +223,28 @@ message at a time:
 .. figure:: coupling_interact.svg
    :align: center
    :alt: component1's O_I port connects to component2's S port, and
-         component2's O_I port connects back to component1's S port, both
-         inside a single shared timeline.
+         component2's O_I port connects back to component1's S port.
 
-If Component 1 and Component 2 don't take equal-sized steps, they run at a
-different pace, and by the definition of a timeline, that means they don't
-actually run on the same one: say Component 1's ``O_I``/``S`` ports live on
-timeline 1, and Component 2's live on a different timeline 2. Since a conduit
-only ever connects ports on the same timeline, wiring them directly together
-does not work, we need something in between that can talk to each of them on
-their own timeline. A **timeline bridge** does exactly that: it has two
-``O_I``/``S`` port pairs of its own, one that lives on timeline 1 and connects
-to Component 1, and another that lives on timeline 2 and connects to Component
-2 the same way, bridging the two timelines by owning a subtimeline on each side.
+If Component 1 and Component 2 don't take equal-sized steps, wiring them
+together directly no longer works: whichever one takes the smaller steps
+would have to wait for a message the other isn't ready to send yet, so the
+two end up waiting on each other, which can hang or deadlock the run
+entirely. What's needed instead is a component that sits between them and
+transforms each incoming message to the timestep the other side expects.
+A **timeline bridge** does exactly that: it has two ``O_I``/``S`` port
+pairs of its own, one that connects to Component 1 and runs at its pace,
+and another that connects to Component 2 and runs at its pace.
+
+.. TODO: once the Time bridge is documented, refer to docs/source/time_bridges.rst here.
 
 Just like that, one subtimeline per component it connects to, a bridge
 component groups its ports under two ``timeline <name>:`` headings, except
 here each subtimeline is driven by the component on that side rather than
-by the bridge itself. This is what that looks like in a yMMSL:
+by the bridge itself. Those two subtimelines are the bridge's own, though,
+not Component 1's or Component 2's, so before conduits between the bridge
+and either peer are allowed, each of the bridge's subtimelines needs to be
+declared a ``matching_timelines:`` pair with the peer whose pace it adapts
+to. This is what that looks like in a yMMSL:
 
 .. code-block:: yaml
     :caption: yMMSL for a timeline bridge connecting ``component1`` and ``component2``
@@ -260,6 +269,9 @@ by the bridge itself. This is what that looks like in a yMMSL:
             o_i: b_out
             s: b_in
         implementation: temporal_coupler
+    matching_timelines:
+      component1: timeline_bridge.component1
+      component2: timeline_bridge.component2
     conduits:
       component1.boundary_out: timeline_bridge.a_in
       component2.boundary_out: timeline_bridge.b_in
