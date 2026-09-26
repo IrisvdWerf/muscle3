@@ -279,7 +279,7 @@ def run_instances(instances: dict[str, Callable], manager_location: str) -> None
             f"Instance(s) {failed_names} failed to shut down cleanly. Here is the"
             " final bit of the output:"
         )
-        for name, output in zip(failed_names, outputs, strict=False):
+        for name, output in zip(failed_names, outputs, strict=True):
             msg += "\n ---------- " + name + " ----------\n"
             msg += output + "\n"
             msg += f"See muscle3.{name}.log for the complete output\n"

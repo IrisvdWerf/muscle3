@@ -93,9 +93,7 @@ def impi_prep_resources(resources: ResourceAssignment) -> tuple[str, dict[str, s
             i += 1
 
     machinefile = (
-        "\n".join(
-            (f"{m}:{c}" for m, c in zip(machine_nodes, proc_counts, strict=False))
-        )
+        "\n".join((f"{m}:{c}" for m, c in zip(machine_nodes, proc_counts, strict=True)))
         + "\n"
     )
 

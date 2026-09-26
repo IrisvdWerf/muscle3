@@ -142,7 +142,7 @@ class NativeInstantiator(mp.Process):
             zip(
                 global_resources().nodes,
                 global_resources().logical_cpus_per_node,
-                strict=False,
+                strict=True,
             )
         )
 

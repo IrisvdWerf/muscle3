@@ -176,7 +176,7 @@ class ProfileDatabase:
         wait_times = [(wait[i] if i in wait else 0) * 1e-9 for i in complete_instances]
         run_times = [
             t - c - w
-            for t, c, w in zip(total_times, comm_times, wait_times, strict=False)
+            for t, c, w in zip(total_times, comm_times, wait_times, strict=True)
         ]
 
         return complete_instances, run_times, comm_times, wait_times
@@ -200,7 +200,7 @@ class ProfileDatabase:
         instances, run_times, comm_times, _ = self.instance_stats()
 
         active_times = {
-            i: r + c for i, r, c in zip(instances, run_times, comm_times, strict=False)
+            i: r + c for i, r, c in zip(instances, run_times, comm_times, strict=True)
         }
 
         cur = self._get_cursor()

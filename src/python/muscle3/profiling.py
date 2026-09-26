@@ -165,7 +165,7 @@ class TimelinePlot:
         # Y axis
         self._cur = sqlite3.connect(performance_file).cursor()
         self._cur.execute("SELECT oid, name FROM instances ORDER BY oid")
-        instance_ids, instance_names = zip(*self._cur.fetchall(), strict=False)
+        instance_ids, instance_names = zip(*self._cur.fetchall(), strict=True)
 
         ax.set_yticks(instance_ids)
         ax.set_yticklabels(instance_names)
@@ -327,9 +327,9 @@ class TimelinePlot:
             return list(), list(), list(), None
 
         if len(results) == _MAX_EVENTS:
-            return tuple(zip(*results, strict=False)) + (results[-1][1],)  # type: ignore
+            return tuple(zip(*results, strict=True)) + (results[-1][1],)  # type: ignore
 
-        return tuple(zip(*results, strict=False)) + (None,)  # type: ignore
+        return tuple(zip(*results, strict=True)) + (None,)  # type: ignore
 
     def update_data(self, ax: Axes) -> None:
         """Update the plot after the axes have changed
