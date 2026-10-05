@@ -1,0 +1,34 @@
+ymmsl_version: v0.2
+
+description: |
+  yMMSL metadata for the meso code
+
+programs:
+  meso:
+    ports:
+      f_init: init
+      o_i: out
+      s: in
+      o_f: final
+      timeline sub1:
+        s: in1
+        o_i: out1
+      timeline sub2:
+        s: in2
+    description: |
+      # A model with O_I and S ports on several timelines
+
+      It is called by a macro model, and on each call it uses its O_I and S ports in
+      different orders on different timelines.
+
+      ## Ports
+
+      init: Receives a single integer x
+      out: Sends x and x + 1 on two consecutive iterations (timeline of meso)
+      in: Receives an integer after each message on out (timeline of meso)
+      in1: Receives an integer y on each of two iterations (timeline sub1)
+      out1: Sends x + y after receiving y on in1 (timeline sub1)
+      in2: Receives a single integer (timeline sub2)
+      final: Sends the sum of all integers received on in, in1 and in2
+    executable: python3
+    args: "-m meso"

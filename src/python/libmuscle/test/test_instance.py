@@ -202,6 +202,37 @@ def test_create_instance_manager_location_envvar(
     MMPClient.assert_called_once_with(Ref("component[13]"), "tcp:localhost:9002")
 
 
+def test_create_instance_argv_argument(
+    manager_location_argv,
+    instance_argv,
+    manager_location_envvar,
+    instance_envvar,
+    MMPClient,
+    declared_ports,
+):
+
+    argv = ["program", "--muscle-instance=other[2]", "--muscle-manager=tcp:other:9003"]
+    instance = Instance(declared_ports, argv=argv)
+    instance.error_shutdown("")  # ensure all threads and resources are cleaned up
+
+    MMPClient.assert_called_once_with(Ref("other[2]"), "tcp:other:9003")
+
+
+def test_create_instance_argv_argument_envvar(
+    manager_location_argv,
+    instance_argv,
+    manager_location_envvar,
+    instance_envvar,
+    MMPClient,
+    declared_ports,
+):
+
+    instance = Instance(declared_ports, argv=["program"])
+    instance.error_shutdown("")  # ensure all threads and resources are cleaned up
+
+    MMPClient.assert_called_once_with(Ref("component[13]"), "tcp:localhost:9002")
+
+
 def test_create_instance_registration(
     manager_location_argv,
     instance_argv,
