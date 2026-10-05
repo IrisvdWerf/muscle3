@@ -102,6 +102,8 @@ class Instance:
         self,
         ports: dict[Operator, list[str]] | None = None,
         flags: InstanceFlags = _NO_INSTANCE_FLAGS,
+        *,
+        argv: list[str] | None = None,
     ) -> None:
         """Create an Instance.
 
@@ -111,8 +113,14 @@ class Instance:
             flags: Indicate properties for this instance. See
                 :py:class:`InstanceFlags` for a detailed description of possible
                 flags.
+            argv: Command line arguments to take the --muscle-instance and
+                --muscle-manager options from, starting with the program name like
+                :py:data:`sys.argv`. Defaults to :py:data:`sys.argv`.
         """
         self.__is_shut_down = False
+
+        self.__argv = sys.argv if argv is None else argv
+        """Command line arguments of this instance."""
 
         self._flags = InstanceFlags(flags)
 
@@ -810,8 +818,7 @@ class Instance:
         if saved_at is not None:
             self._trigger_manager.update_checkpoints(saved_at)
 
-    @staticmethod
-    def __extract_manager_location() -> str:
+    def __extract_manager_location(self) -> str:
         """Gets the manager network location from the command line.
 
         We use a --muscle-manager=<host:port> argument to tell the
@@ -828,7 +835,7 @@ class Instance:
         # just one option from the command line and ignore the rest.
         # So we do it by hand.
         prefix = "--muscle-manager="
-        for arg in sys.argv[1:]:
+        for arg in self.__argv[1:]:
             if arg.startswith(prefix):
                 return arg[len(prefix) :]
 
@@ -1010,7 +1017,7 @@ class Instance:
         # just one option from the command line and ignore the rest.
         # So we do it by hand.
         prefix_tag = "--muscle-instance="
-        for arg in sys.argv[1:]:
+        for arg in self.__argv[1:]:
             if arg.startswith(prefix_tag):
                 prefix_str = arg[len(prefix_tag) :]
                 prefix_ref = Reference(prefix_str)
