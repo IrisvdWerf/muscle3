@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import threading
 from copy import copy
 from enum import Flag, auto
 from typing import Literal, cast, overload
@@ -22,6 +23,13 @@ from libmuscle.snapshot_manager import SnapshotManager
 from libmuscle.util import extract_log_file_location
 
 _logger = logging.getLogger(__name__)
+
+
+# For internal use only. If its value is set in a thread, then Instances created in
+# that thread take their name from it instead of from the command line or the
+# environment, which are shared by all threads. This lets the implementation tester
+# create several Instances with different names concurrently.
+_thread_instance_name = threading.local()
 
 
 class InstanceFlags(Flag):
@@ -102,8 +110,6 @@ class Instance:
         self,
         ports: dict[Operator, list[str]] | None = None,
         flags: InstanceFlags = _NO_INSTANCE_FLAGS,
-        *,
-        argv: list[str] | None = None,
     ) -> None:
         """Create an Instance.
 
@@ -113,14 +119,8 @@ class Instance:
             flags: Indicate properties for this instance. See
                 :py:class:`InstanceFlags` for a detailed description of possible
                 flags.
-            argv: Command line arguments to take the --muscle-instance and
-                --muscle-manager options from, starting with the program name like
-                :py:data:`sys.argv`. Defaults to :py:data:`sys.argv`.
         """
         self.__is_shut_down = False
-
-        self.__argv = sys.argv if argv is None else argv
-        """Command line arguments of this instance."""
 
         self._flags = InstanceFlags(flags)
 
@@ -818,7 +818,8 @@ class Instance:
         if saved_at is not None:
             self._trigger_manager.update_checkpoints(saved_at)
 
-    def __extract_manager_location(self) -> str:
+    @staticmethod
+    def __extract_manager_location() -> str:
         """Gets the manager network location from the command line.
 
         We use a --muscle-manager=<host:port> argument to tell the
@@ -835,7 +836,7 @@ class Instance:
         # just one option from the command line and ignore the rest.
         # So we do it by hand.
         prefix = "--muscle-manager="
-        for arg in self.__argv[1:]:
+        for arg in sys.argv[1:]:
             if arg.startswith(prefix):
                 return arg[len(prefix) :]
 
@@ -996,8 +997,10 @@ class Instance:
     def __make_full_name(self) -> tuple[Reference, list[int]]:
         """Returns instance name and index.
 
-        This takes the argument to the --muscle-instance= command-line
-        option and splits it into a component name and an index.
+        This takes the instance name set for the current thread in
+        _thread_instance_name or, if there is none, the argument
+        to the --muscle-instance= command-line option or the MUSCLE_INSTANCE
+        environment variable, and splits it into a component name and an index.
         """
 
         def split_reference(ref: Reference) -> tuple[Reference, list[int]]:
@@ -1013,11 +1016,15 @@ class Instance:
 
             return name, index
 
+        thread_instance_name = getattr(_thread_instance_name, "value", None)
+        if thread_instance_name is not None:
+            return split_reference(Reference(thread_instance_name))
+
         # Neither getopt, optparse, or argparse will let me pick out
         # just one option from the command line and ignore the rest.
         # So we do it by hand.
         prefix_tag = "--muscle-instance="
-        for arg in self.__argv[1:]:
+        for arg in sys.argv[1:]:
             if arg.startswith(prefix_tag):
                 prefix_str = arg[len(prefix_tag) :]
                 prefix_ref = Reference(prefix_str)
