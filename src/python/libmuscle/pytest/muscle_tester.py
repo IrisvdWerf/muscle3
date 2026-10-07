@@ -345,9 +345,17 @@ class MuscleTester:
                 close=lambda self, _=True: origclose(self, False),
             )
         )
-        self.implementation_tester = ImplementationTester(
-            default_timeout, muscle_manager_address, test_ymmsl_config
-        )
+        try:
+            self.implementation_tester = ImplementationTester(
+                default_timeout, muscle_manager_address, test_ymmsl_config
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"Could not connect to the implementation '{implementation}'. Please"
+                " check that it starts and runs correctly, e.g. that its executable"
+                " exists. Its output can be found in"
+                f" {self.run_dir / 'instances'}."
+            ) from exc
         self._exitstack.callback(self.implementation_tester.cleanup)
         return self.implementation_tester
 

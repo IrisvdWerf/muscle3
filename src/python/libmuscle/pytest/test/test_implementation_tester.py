@@ -98,7 +98,7 @@ def test_cleanup() -> None:
 
 
 def test_shut_down_all() -> None:
-    # The testers shut down concurrently: each can only finish once the other started
+    # The testers shut down concurrently: each can only finish once the other shut down
     tester = make_tester()
     parent_started = threading.Event()
     sibling_started = threading.Event()
@@ -160,15 +160,19 @@ def test_send() -> None:
     tester.send("muscle_settings_in", msg)
     tester._parent.send.assert_any_call(PARENT_SETTINGS_PORT_NAME, msg, None)
 
-    # Using a sibling port before F_INIT is an error, but doesn't shut down
+    # Using a sibling port before F_INIT is an error, which shuts down all testers
     tester = make_tester()
     with pytest.raises(RuntimeError, match="before sending a message"):
         tester.send("out", Message(0.0, None, 0))
-    assert not tester._is_shut_down
+    assert tester._is_shut_down
+    tester._sibling.send.assert_not_called()
 
-    # Using an unknown port is an error, which lists the available ports
+    # Using an unknown port is an error, which lists the available ports and shuts
+    # down all testers
+    tester = make_tester()
     with pytest.raises(ValueError, match="Available ports are: final, in, init, out"):
         tester.send("nonexistent", Message(0.0, None, 0))
+    assert tester._is_shut_down
 
     # An error while sending shuts down all testers
     tester = make_tester()
@@ -182,6 +186,20 @@ def test_send() -> None:
 
 
 def test_receive() -> None:
+    # Using a sibling port before F_INIT is an error, which shuts down all testers
+    tester = make_tester()
+    with pytest.raises(RuntimeError, match="before sending a message"):
+        tester.receive("in")
+    assert tester._is_shut_down
+    tester._sibling.receive.assert_not_called()
+
+    # Using an unknown port is an error, which lists the available ports and shuts
+    # down all testers
+    tester = make_tester()
+    with pytest.raises(ValueError, match="Available ports are: final, in, init, out"):
+        tester.receive("nonexistent")
+    assert tester._is_shut_down
+
     # An error while receiving shuts down all testers
     tester = make_tester()
     tester._parent.receive.side_effect = RuntimeError("Deadlock detected")
