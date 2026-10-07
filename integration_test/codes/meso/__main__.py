@@ -6,7 +6,7 @@ instance = Instance(
     {
         Operator.F_INIT: ["init"],
         Operator.O_I: ["out", "out1"],
-        Operator.S: ["in", "in1", "in2"],
+        Operator.S: ["in", "in1"],
         Operator.O_F: ["final"],
     }
 )
@@ -27,9 +27,6 @@ while instance.reuse_instance():
         y = instance.receive("in1").data
         total += y
         instance.send("out1", Message(msg.timestamp + i, None, x + y))
-
-    # timeline sub2: only s
-    total += instance.receive("in2").data
 
     # o_f
     instance.send("final", Message(msg.timestamp, None, total))

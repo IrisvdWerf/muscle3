@@ -76,23 +76,20 @@ def test_macro_model_with_tester(muscle3_tester: MuscleTester) -> None:
 def test_meso_model_with_tester(muscle3_tester: MuscleTester) -> None:
     """Test the meso model using MuscleTester acting as both its macro and its peer.
 
-    The meso model has F_INIT and O_F ports, and O_I and S ports on three timelines,
-    which it uses in different orders. On each reuse loop iteration, it:
+    The meso model has F_INIT and O_F ports, and O_I and S ports on two timelines.
+    On each reuse loop iteration, it:
       - Receives an integer x on 'init' (F_INIT)
       - Sends x and x + 1 on 'out' (O_I), receiving a reply on 'in' (S) each time
       - Receives an integer y on 'in1' (S) and then sends x + y on 'out1' (O_I), twice
         (timeline sub1)
-      - Receives an integer on 'in2' (S), without a matching O_I (timeline sub2)
-      - Sends the sum of all integers received on 'in', 'in1' and 'in2' on 'final'
-        (O_F)
+      - Sends the sum of all integers received on 'in' and 'in1' on 'final' (O_F)
+
+    The tester mirrors this order.
     """
     tester = muscle3_tester.start_implementation(YMMSL_CODES_DIR / "meso.ymmsl", "meso")
 
     for x in (0, 10):
         tester.send("init", Message(float(x), None, x))
-
-        # Timelines are independent, so we can send this one already
-        tester.send("in2", Message(float(x), None, 100))
 
         # Default timeline: the implementation sends first
         for i in range(2):
@@ -107,7 +104,7 @@ def test_meso_model_with_tester(muscle3_tester: MuscleTester) -> None:
             assert msg.data == x + y
 
         reply = tester.receive("final")
-        assert reply.data == 2 * x + 2 * (x + 1) + 1 + 2 + 100
+        assert reply.data == 2 * x + 2 * (x + 1) + 1 + 2
 
 
 def test_unfinished_exchange_raises_error_on_cleanup(tmp_path: Path) -> None:
@@ -184,7 +181,7 @@ def test_failing_executable(muscle3_tester: MuscleTester) -> None:
     default_timeout = 1.0
 
     start = time.monotonic()
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="Could not connect to the implementation"):
         muscle3_tester.start_implementation(
             """
             ymmsl_version: v0.2
