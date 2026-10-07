@@ -16,6 +16,10 @@ from ymmsl.v0_2 import (
     resolve_timelines,
 )
 
+from libmuscle.pytest.implementation_tester import (
+    PARENT_TESTER_NAME,
+    SIBLING_TESTER_NAME,
+)
 from libmuscle.pytest.muscle_tester import MuscleTester
 
 
@@ -84,16 +88,16 @@ def meso_model_config() -> Configuration:
     return Configuration(models=[sub_model])
 
 
-def test_add_tester_model_to_config(
+def test_add_test_model_to_config(
     tmp_run_dir: Path, meso_model_config: Configuration
 ) -> None:
     tester = MuscleTester(tmp_run_dir)
-    result = tester._add_tester_component(meso_model_config, "meso_model")
+    tester._add_test_model(meso_model_config, "meso_model")
 
-    tester_model = result.models[Reference("muscle3_test_model")]
-    assert set(tester_model.components) == {
-        Reference("muscle3_implementation_tester_parent"),
-        Reference("muscle3_implementation_tester_sibling"),
+    test_model = meso_model_config.models[Reference("muscle3_test_model")]
+    assert set(test_model.components) == {
+        Reference(PARENT_TESTER_NAME),
+        Reference(SIBLING_TESTER_NAME),
         Reference("meso_model"),
     }
 
@@ -102,13 +106,13 @@ def test_add_tester_program_to_config(
     tmp_run_dir: Path, meso_program_config: Configuration
 ) -> None:
     tester = MuscleTester(tmp_run_dir)
-    result = tester._add_tester_component(meso_program_config, "meso_model_program")
+    tester._add_test_model(meso_program_config, "meso_model_program")
 
     for name in (
-        "muscle3_implementation_tester_parent",
-        "muscle3_implementation_tester_sibling",
+        PARENT_TESTER_NAME,
+        SIBLING_TESTER_NAME,
     ):
-        tester_prog = result.programs[Reference(name)]
+        tester_prog = meso_program_config.programs[Reference(name)]
         assert tester_prog.execution_model == ExecutionModel.MANUAL
 
 
@@ -116,25 +120,25 @@ def test_add_test_ports_to_config(
     tmp_run_dir: Path, meso_program_config: Configuration
 ) -> None:
     tester = MuscleTester(tmp_run_dir)
-    result = tester._add_tester_component(meso_program_config, "meso_model_program")
-    tester_model = result.models[Reference("muscle3_test_model")]
+    tester._add_test_model(meso_program_config, "meso_model_program")
+    test_model = meso_program_config.models[Reference("muscle3_test_model")]
 
     def ports(tester_name: str) -> dict[str, tuple[Operator, Timeline]]:
-        component = tester_model.components[Reference(tester_name)]
+        component = test_model.components[Reference(tester_name)]
         return {
             str(name): (port.operator, port.timeline)
             for name, port in component.ports.items()
         }
 
     # The parent mirrors the F_INIT and O_F ports, and nests the sibling
-    assert ports("muscle3_implementation_tester_parent") == {
+    assert ports(PARENT_TESTER_NAME) == {
         "init_in": (Operator.O_I, Timeline([])),
         "final_out": (Operator.S, Timeline([])),
         "__sibling_settings_out__": (Operator.O_I, Timeline([])),
     }
 
     # The sibling mirrors the O_I and S ports, on the same timelines
-    assert ports("muscle3_implementation_tester_sibling") == {
+    assert ports(SIBLING_TESTER_NAME) == {
         "state_out": (Operator.S, Timeline("sub1")),
         "update_in": (Operator.O_I, Timeline("sub2")),
     }
@@ -144,92 +148,92 @@ def test_add_test_conduits_to_config(
     tmp_run_dir: Path, meso_program_config: Configuration
 ) -> None:
     tester = MuscleTester(tmp_run_dir)
-    result = tester._add_tester_component(meso_program_config, "meso_model_program")
-    tester_model = result.models[Reference("muscle3_test_model")]
+    tester._add_test_model(meso_program_config, "meso_model_program")
+    test_model = meso_program_config.models[Reference("muscle3_test_model")]
 
-    parent = "muscle3_implementation_tester_parent"
-    sibling = "muscle3_implementation_tester_sibling"
     expected = [
         # The parent sends on F_INIT and receives from O_F
-        Conduit(f"{parent}.init_in", "meso_model_program.init_in"),
-        Conduit("meso_model_program.final_out", f"{parent}.final_out"),
+        Conduit(f"{PARENT_TESTER_NAME}.init_in", "meso_model_program.init_in"),
+        Conduit("meso_model_program.final_out", f"{PARENT_TESTER_NAME}.final_out"),
         # The sibling receives from O_I and sends on S
-        Conduit("meso_model_program.state_out", f"{sibling}.state_out"),
-        Conduit(f"{sibling}.update_in", "meso_model_program.update_in"),
+        Conduit("meso_model_program.state_out", f"{SIBLING_TESTER_NAME}.state_out"),
+        Conduit(f"{SIBLING_TESTER_NAME}.update_in", "meso_model_program.update_in"),
         # The parent nests the sibling in its timeline
-        Conduit(f"{parent}.__sibling_settings_out__", f"{sibling}.muscle_settings_in"),
+        Conduit(
+            f"{PARENT_TESTER_NAME}.__sibling_settings_out__",
+            f"{SIBLING_TESTER_NAME}.muscle_settings_in",
+        ),
     ]
-    assert len(tester_model.conduits) == len(expected)
+    assert len(test_model.conduits) == len(expected)
     for conduit in expected:
-        assert conduit in tester_model.conduits
+        assert conduit in test_model.conduits
 
     # Via F_INIT, the parent nests the implementation next to the sibling.
-    resolve_timelines(tester_model)
+    resolve_timelines(test_model)
     assert {
         str(name): component.timeline
-        for name, component in tester_model.components.items()
+        for name, component in test_model.components.items()
     } == {
-        parent: Timeline(parent),
-        "meso_model_program": Timeline(f"{parent}:meso_model_program"),
-        sibling: Timeline(f"{parent}:{sibling}"),
+        PARENT_TESTER_NAME: Timeline(PARENT_TESTER_NAME),
+        "meso_model_program": Timeline(f"{PARENT_TESTER_NAME}:meso_model_program"),
+        SIBLING_TESTER_NAME: Timeline(f"{PARENT_TESTER_NAME}:{SIBLING_TESTER_NAME}"),
     }
 
 
 def test_original_config_unchanged(
     tmp_run_dir: Path, program_config: Configuration
 ) -> None:
-    """add_tester_component should not remove the original model/program."""
+    """_add_test_model should not remove the original model/program."""
     tester = MuscleTester(tmp_run_dir)
-    result = tester._add_tester_component(program_config, "micro_model_program")
-    assert Reference("micro_model_program") in result.programs
+    tester._add_test_model(program_config, "micro_model_program")
+    assert Reference("micro_model_program") in program_config.programs
 
 
 def test_error_for_unknown_implementation(tmp_run_dir: Path) -> None:
     config = Configuration(models=[], programs=[])
     tester = MuscleTester(tmp_run_dir)
     with pytest.raises(ValueError, match="No implementation 'nonexistent'"):
-        tester._add_tester_component(config, "nonexistent")
+        tester._add_test_model(config, "nonexistent")
 
 
 def test_add_settings_conduit_without_f_init(
     tmp_run_dir: Path, model_config: Configuration
 ) -> None:
     tester = MuscleTester(tmp_run_dir)
-    result = tester._add_tester_component(model_config, "macro_model")
-    tester_model = result.models[Reference("muscle3_test_model")]
+    tester._add_test_model(model_config, "macro_model")
+    test_model = model_config.models[Reference("muscle3_test_model")]
 
     # Without F_INIT ports, the parent nests the implementation via muscle_settings_in
-    parent = "muscle3_implementation_tester_parent"
     assert (
-        Conduit(f"{parent}.__settings_in__", "macro_model.muscle_settings_in")
-        in tester_model.conduits
+        Conduit(
+            f"{PARENT_TESTER_NAME}.__settings_in__", "macro_model.muscle_settings_in"
+        )
+        in test_model.conduits
     )
 
     # This raises if the timelines are not consistent
-    resolve_timelines(tester_model)
-    implementation = tester_model.components[Reference("macro_model")]
-    assert implementation.timeline == Timeline(f"{parent}:macro_model")
+    resolve_timelines(test_model)
+    implementation = test_model.components[Reference("macro_model")]
+    assert implementation.timeline == Timeline(f"{PARENT_TESTER_NAME}:macro_model")
 
 
 def test_add_matching_timelines(
     tmp_run_dir: Path, meso_program_config: Configuration
 ) -> None:
     tester = MuscleTester(tmp_run_dir)
-    result = tester._add_tester_component(meso_program_config, "meso_model_program")
-    tester_model = result.models[Reference("muscle3_test_model")]
+    tester._add_test_model(meso_program_config, "meso_model_program")
+    test_model = meso_program_config.models[Reference("muscle3_test_model")]
 
     # Each timeline of the implementation matches the same one of the sibling
-    parent = "muscle3_implementation_tester_parent"
-    sibling = "muscle3_implementation_tester_sibling"
-    assert tester_model.matching_timelines is not None
-    assert [match.matches for match in tester_model.matching_timelines] == [
+    assert test_model.matching_timelines is not None
+    assert [match.matches for match in test_model.matching_timelines] == [
         {
-            Timeline(f"{parent}:meso_model_program.sub1"),
-            Timeline(f"{parent}:{sibling}.sub1"),
+            Timeline(f"{PARENT_TESTER_NAME}:meso_model_program.sub1"),
+            Timeline(f"{PARENT_TESTER_NAME}:{SIBLING_TESTER_NAME}.sub1"),
         },
         {
-            Timeline(f"{parent}:meso_model_program.sub2"),
-            Timeline(f"{parent}:{sibling}.sub2"),
+            Timeline(f"{PARENT_TESTER_NAME}:meso_model_program.sub2"),
+            Timeline(f"{PARENT_TESTER_NAME}:{SIBLING_TESTER_NAME}.sub2"),
         },
     ]
 
@@ -238,11 +242,11 @@ def test_no_sibling_without_o_i_and_s_ports(
     tmp_run_dir: Path, program_config: Configuration
 ) -> None:
     tester = MuscleTester(tmp_run_dir)
-    result = tester._add_tester_component(program_config, "micro_model_program")
+    tester._add_test_model(program_config, "micro_model_program")
 
-    tester_model = result.models[Reference("muscle3_test_model")]
-    assert set(tester_model.components) == {
-        Reference("muscle3_implementation_tester_parent"),
+    test_model = program_config.models[Reference("muscle3_test_model")]
+    assert set(test_model.components) == {
+        Reference(PARENT_TESTER_NAME),
         Reference("micro_model_program"),
     }
-    assert Reference("muscle3_implementation_tester_sibling") not in result.programs
+    assert Reference(SIBLING_TESTER_NAME) not in program_config.programs

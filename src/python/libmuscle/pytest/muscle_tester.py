@@ -74,162 +74,127 @@ class MuscleTester:
         """Allows usage in a with-statement"""
         self.cleanup()
 
-    def _add_tester_component(
-        self, config: Configuration, implementation_name: str
-    ) -> Configuration:
+    def _add_test_model(self, config: Configuration, testee_name: str) -> None:
         """
-        Add tester components connected to the implementation.
-        - Finds the implementation (model or program) by name.
-        - Adds tester components with MANUAL execution, ports and conduits.
+        Add a test model in which tester components are connected to the testee,
+        the implementation under test.
+        - Finds the testee (model or program) by name.
+        - Adds a test model containing the testee and the tester
+          components, and adds MANUAL programs for the testers.
 
-        The ports of the implementation are connected to two tester components:
+        The ports of the testee are connected to two tester components:
         - F_INIT and O_F ports are connected to the O_I and S ports of the
-          'muscle3_implementation_tester_parent', which acts as the parent of the
-          implementation.
+          'muscle3_tester_parent', which acts as the parent of the
+          testee.
         - O_I and S ports are connected to the S and O_I ports of the
-          'muscle3_implementation_tester_sibling', like in an interact coupling,
+          'muscle3_tester_sibling', like in an interact coupling,
           and their timelines are declared to match. The parent nests the sibling
           in its timeline through the sibling's muscle_settings_in, so that it is
-          on the same level as the implementation.
+          on the same level as the testee.
         """
 
-        implementation: Implementation
-        if implementation_name in config.models:
-            implementation = config.models[Reference(implementation_name)]
-        elif implementation_name in config.programs:
-            implementation = config.programs[Reference(implementation_name)]
+        testee: Implementation
+        if testee_name in config.models:
+            testee = config.models[Reference(testee_name)]
+        elif testee_name in config.programs:
+            testee = config.programs[Reference(testee_name)]
         else:
-            raise ValueError(
-                f"No implementation '{implementation_name}' found in the yMMSL"
-            )
+            raise ValueError(f"No implementation '{testee_name}' found in the yMMSL")
 
-        tester_model = Model(name=TEST_MODEL_NAME)
+        test_model = Model(name=TEST_MODEL_NAME)
 
-        parent_ports = self._add_parent_tester(
-            tester_model, implementation_name, implementation
-        )
-        sibling_ports = self._add_sibling_tester(
-            tester_model, implementation_name, implementation, parent_ports
+        # A sibling is only needed if the testee has O_I or S ports
+        has_sibling = any(
+            port.operator in (Operator.O_I, Operator.S)
+            for port in testee.ports.values()
         )
 
-        programs = {PARENT_TESTER_NAME: parent_ports}
-        if sibling_ports:
-            programs[SIBLING_TESTER_NAME] = sibling_ports
+        self._add_parent_tester(config, test_model, testee)
+        if has_sibling:
+            self._add_sibling_tester(config, test_model, testee)
 
-        for name, ports in programs.items():
-            tester_model.components[Reference(name)] = Component(
-                name=name,
-                ports=Ports(ports),
-                description="Tester component for implementation testing",
-                implementation=name,
-                optional=False,
+            # Nest the sibling in the parent's timeline, next to the testee
+            test_model.conduits.append(
+                Conduit(
+                    f"{PARENT_TESTER_NAME}.{SIBLING_SETTINGS_PORT_NAME}",
+                    f"{SIBLING_TESTER_NAME}.muscle_settings_in",
+                )
             )
+            port = Port(Identifier(SIBLING_SETTINGS_PORT_NAME), Operator.O_I)
+            parent = Reference(PARENT_TESTER_NAME)
+            test_model.components[parent].ports[port.name] = port
+            config.programs[parent].ports[port.name] = port
 
-        tester_model.components[Reference(implementation_name)] = Component(
-            name=implementation_name,
-            ports=implementation.ports,
-            description="The tested implementation",
-            implementation=implementation_name,
+        test_model.components[testee.name] = Component(
+            name=str(testee.name),
+            ports=testee.ports,
+            description="The testee",
+            implementation=str(testee.name),
             optional=False,
         )
 
-        for name, ports in programs.items():
-            config.programs[Reference(name)] = Program(
-                name=name,
-                ports=Ports(ports),
-                execution_model=ExecutionModel.MANUAL,
-                description="Manual tester program for implementation testing",
-            )
-
-        config.models[Reference(TEST_MODEL_NAME)] = tester_model
-        return config
+        config.models[Reference(TEST_MODEL_NAME)] = test_model
 
     @staticmethod
     def _add_parent_tester(
-        tester_model: Model, implementation_name: str, implementation: Implementation
-    ) -> list[Port]:
-        """Connect the F_INIT and O_F ports of the implementation to the parent.
+        config: Configuration, test_model: Model, testee: Implementation
+    ) -> None:
+        """Add the parent tester, connected to the F_INIT and O_F ports.
 
         Args:
-            tester_model: The test model to add conduits to.
-            implementation_name: Name of the implementation.
-            implementation: The implementation to test.
-
-        Returns:
-            The ports of the parent tester.
+            config: The configuration to add the tester program to.
+            test_model: The test model to add the component and conduits to.
+            testee: The testee.
         """
         parent_ports = [
             MuscleTester._connect_mirrored_port(
-                tester_model, PARENT_TESTER_NAME, implementation_name, port
+                test_model, PARENT_TESTER_NAME, testee, port
             )
-            for port in implementation.ports.values()
+            for port in testee.ports.values()
             if port.operator in (Operator.F_INIT, Operator.O_F)
         ]
 
-        if not any(
-            p.operator is Operator.F_INIT for p in implementation.ports.values()
-        ):
+        if not any(p.operator is Operator.F_INIT for p in testee.ports.values()):
             # We'll connect muscle_settings_in to make the timeline logic work
-            tester_model.conduits.append(
+            test_model.conduits.append(
                 Conduit(
                     f"{PARENT_TESTER_NAME}.{PARENT_SETTINGS_PORT_NAME}",
-                    f"{implementation_name}.muscle_settings_in",
+                    f"{testee.name}.muscle_settings_in",
                 )
             )
             parent_ports.append(
                 Port(Identifier(PARENT_SETTINGS_PORT_NAME), Operator.O_I)
             )
 
-        return parent_ports
+        MuscleTester._add_tester(config, test_model, PARENT_TESTER_NAME, parent_ports)
 
     @staticmethod
     def _add_sibling_tester(
-        tester_model: Model,
-        implementation_name: str,
-        implementation: Implementation,
-        parent_ports: list[Port],
-    ) -> list[Port]:
-        """Connect the O_I and S ports of the implementation to the sibling.
+        config: Configuration, test_model: Model, testee: Implementation
+    ) -> None:
+        """Add the sibling tester, connected to the O_I and S ports.
 
-        This also nests the sibling in the parent's timeline, next to the
-        implementation, by adding a port to parent_ports that connects to the
-        sibling's muscle_settings_in.
+        The timelines of the connected ports are declared to match.
 
         Args:
-            tester_model: The test model to add conduits and matching timelines to.
-            implementation_name: Name of the implementation.
-            implementation: The implementation to test.
-            parent_ports: The ports of the parent tester, which will be extended.
-
-        Returns:
-            The ports of the sibling tester, or an empty list if the implementation
-            has no O_I or S ports, in which case no sibling is needed.
+            config: The configuration to add the tester program to.
+            test_model: The test model to add the component, conduits and
+                matching timelines to.
+            testee: The testee.
         """
-        implementation_ports = [
+        testee_ports = [
             port
-            for port in implementation.ports.values()
+            for port in testee.ports.values()
             if port.operator in (Operator.O_I, Operator.S)
         ]
-        if not implementation_ports:
-            return []
 
         sibling_ports = [
             MuscleTester._connect_mirrored_port(
-                tester_model, SIBLING_TESTER_NAME, implementation_name, port
+                test_model, SIBLING_TESTER_NAME, testee, port
             )
-            for port in implementation_ports
+            for port in testee_ports
         ]
 
-        # Nest the sibling in the parent's timeline, next to the implementation
-        tester_model.conduits.append(
-            Conduit(
-                f"{PARENT_TESTER_NAME}.{SIBLING_SETTINGS_PORT_NAME}",
-                f"{SIBLING_TESTER_NAME}.muscle_settings_in",
-            )
-        )
-        parent_ports.append(Port(Identifier(SIBLING_SETTINGS_PORT_NAME), Operator.O_I))
-
-        # And declare the timelines of the mirrored ports to match
         def port_timeline(component: str, timeline: Timeline | None) -> Timeline:
             if timeline is None:
                 return Timeline([PARENT_TESTER_NAME, component])
@@ -238,46 +203,72 @@ class MuscleTester:
             )
 
         timelines: list[Timeline | None] = []
-        for port in implementation_ports:
+        for port in testee_ports:
             if (port.timeline or None) not in timelines:
                 timelines.append(port.timeline or None)
 
-        tester_model.matching_timelines = [
+        test_model.matching_timelines = [
             MatchingTimelines(
-                port_timeline(implementation_name, timeline),
+                port_timeline(str(testee.name), timeline),
                 port_timeline(SIBLING_TESTER_NAME, timeline),
             )
             for timeline in timelines
         ]
 
-        return sibling_ports
+        MuscleTester._add_tester(config, test_model, SIBLING_TESTER_NAME, sibling_ports)
+
+    @staticmethod
+    def _add_tester(
+        config: Configuration, test_model: Model, name: str, ports: list[Port]
+    ) -> None:
+        """Add a tester component and its MANUAL program.
+
+        Args:
+            config: The configuration to add the program to.
+            test_model: The test model to add the component to.
+            name: Name of the tester component and program.
+            ports: The ports of the tester.
+        """
+        test_model.components[Reference(name)] = Component(
+            name=name,
+            ports=Ports(ports),
+            description="Tester component for implementation testing",
+            implementation=name,
+            optional=False,
+        )
+        config.programs[Reference(name)] = Program(
+            name=name,
+            ports=Ports(ports),
+            execution_model=ExecutionModel.MANUAL,
+            description="Manual tester program for implementation testing",
+        )
 
     @staticmethod
     def _connect_mirrored_port(
-        tester_model: Model, tester_name: str, implementation_name: str, port: Port
+        test_model: Model, tester_name: str, testee: Implementation, port: Port
     ) -> Port:
-        """Connect a port of the implementation to a mirrored port of a tester.
+        """Connect a port of the testee to a mirrored port of a tester.
 
         Args:
-            tester_model: The test model to add the conduit to.
+            test_model: The test model to add the conduit to.
             tester_name: Name of the tester component.
-            implementation_name: Name of the implementation.
-            port: The port of the implementation.
+            testee: The testee.
+            port: The port of the testee.
 
         Returns:
-            The port of the tester, which sends if the implementation receives and
+            The port of the tester, which sends if the testee receives and
             vice versa.
         """
         tester_port = f"{tester_name}.{port.name}"
-        implementation_port = f"{implementation_name}.{port.name}"
+        testee_port = f"{testee.name}.{port.name}"
         if port.operator.allows_receiving():
-            conduit = Conduit(tester_port, implementation_port)
+            conduit = Conduit(tester_port, testee_port)
             tester_operator = Operator.O_I
         else:
-            conduit = Conduit(implementation_port, tester_port)
+            conduit = Conduit(testee_port, tester_port)
             tester_operator = Operator.S
 
-        tester_model.conduits.append(conduit)
+        test_model.conduits.append(conduit)
         return Port(port.name, tester_operator, port.timeline)
 
     def start_implementation(
@@ -312,8 +303,8 @@ class MuscleTester:
                 initialized, for example because the executable under test does
                 not exist and never registered with the manager.
         """
-        ymmsl_config = ymmsl.load_as(ymmsl.v0_2.Configuration, ymmsl_source)
-        test_ymmsl_config = self._add_tester_component(ymmsl_config, implementation)
+        test_ymmsl_config = ymmsl.load_as(ymmsl.v0_2.Configuration, ymmsl_source)
+        self._add_test_model(test_ymmsl_config, implementation)
 
         # Save the test configuration to a temporary file
         test_ymmsl_path = self.run_dir / "test_config.ymmsl"
